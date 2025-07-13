@@ -115,201 +115,146 @@
 
     <!-- JavaScriptをHTMLに埋め込み -->
    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script> <!-- ★新しい公式ライブラリ★ -->
 <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.js"></script>
+
 <!-- JavaScriptをHTMLに埋め込み -->
 <script>
-const webcamElement = document.getElementById('webcam');
-const canvasElement = document.getElementById('canvas');
-const wordcloudCanvas = document.getElementById('wordcloud');
-const loaderElement = document.getElementById('loader');
-const canvasCtx = canvasElement.getContext('2d');
+    const webcamElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('canvas');
+    const wordcloudCanvas = document.getElementById('wordcloud');
+    const loaderElement = document.getElementById('loader');
+    const canvasCtx = canvasElement.getContext('2d');
 
-let model;
-let detectedObjects = {};
+    let model;
+    let detectedObjects = {};
 
-const cocoSsdLabels = [
-'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
-'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
-'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
-'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
-'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
-'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
-'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
-'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
-'hair drier', 'toothbrush'
-];
+    // ワードクラウドをリセットする関数
+    function resetWordCloud() {
+        detectedObjects = {};
+        const context = wordcloudCanvas.getContext('2d');
+        if (context) {
+            context.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
+        }
+        console.log("Word cloud has been reset.");
+    }
+    
+    async function setupWebcam() {
+        return new Promise((resolve, reject) => {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+                    .then(stream => {
+                        webcamElement.srcObject = stream;
+                        webcamElement.addEventListener('loadeddata', resolve, false);
+                    })
+                    .catch(error => {
+                        console.error("Webcam access error:", error);
+                        loaderElement.innerText = "ウェブカメラにアクセスできません。";
+                        reject();
+                    });
+            } else {
+                loaderElement.innerText = "お使いのブラウザはウェブカメラに対応していません。";
+                reject();
+            }
+        });
+    }
 
-async function setupWebcam() {
-return new Promise((resolve, reject) => {
-const navigatorAny = navigator;
-navigator.getUserMedia = navigator.getUserMedia ||
-navigatorAny.webkitGetUserMedia || navigatorAny.mozGetUserMedia ||
-navigatorAny.msGetUserMedia;
-if (navigator.getUserMedia) {
-navigator.getUserMedia({ video: { facingMode: 'user' } },
-stream => {
-webcamElement.srcObject = stream;
-webcamElement.addEventListener('loadeddata', () => {
-resolve();
-}, false);
-},
-error => {
-console.error("Webcam access error:", error);
-loaderElement.innerText = "ウェブカメラにアクセスできません。";
-reject();
-});
-} else {
-loaderElement.innerText = "お使いのブラウザはウェブカメラに対応していません。";
-reject();
-}
-});
-}
+    // Google公式モデル(COCO-SSD)用に書き換えた、新しい物体検出関数
+    async function detectFrame() {
+        if (!model) return;
 
-// 物体検出をフレームごとに行う (完成版)
-async function detectFrame() {
-if (!model) return;
+        // ★★★ 予測の実行が非常にシンプルになります！ ★★★
+        const predictions = await model.detect(webcamElement);
 
-tf.engine().startScope();
+        // 描画の前にキャンバスをクリア
+        canvasElement.width = webcamElement.videoWidth;
+        canvasElement.height = webcamElement.videoHeight;
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        const currentDetections = {};
+        
+        // ★★★ 予測結果の処理も、非常にシンプルになります！ ★★★
+        for (let i = 0; i < predictions.length; i++) {
+            const prediction = predictions[i];
+            const [x, y, width, height] = prediction.bbox;
+            const klass = prediction.class;
+            const score = prediction.score;
 
-const videoWidth = webcamElement.videoWidth;
-const videoHeight = webcamElement.videoHeight;
-canvasElement.width = videoWidth;
-canvasElement.height = videoHeight;
+            // バウンディングボックスを描画
+            canvasCtx.strokeStyle = "#00FF00";
+            canvasCtx.lineWidth = 4; // 少し太くして見やすく
+            canvasCtx.strokeRect(x, y, width, height);
 
-const input = tf.browser.fromPixels(webcamElement).resizeBilinear([640, 640]).div(255.0).expandDims(0).transpose([0, 3, 1, 2]);
+            // ラベルを描画
+            canvasCtx.fillStyle = "#00FF00";
+            const font = "20px Arial";
+            canvasCtx.font = font;
+            const text = `${klass} ${score.toFixed(2)}`;
+            const textWidth = canvasCtx.measureText(text).width;
+            canvasCtx.fillRect(x, y, textWidth + 8, 24);
+            canvasCtx.fillStyle = "#000000";
+            canvasCtx.fillText(text, x + 4, y + 18);
+            
+            // ワードクラウド用のカウント
+            if (currentDetections[klass]) {
+                currentDetections[klass]++;
+            } else {
+                currentDetections[klass] = 1;
+            }
+        }
+        
+        // 全体のカウントを更新
+        for(const key in currentDetections) {
+            if(detectedObjects[key]){
+                detectedObjects[key]++;
+            } else {
+                detectedObjects[key] = 1;
+            }
+        }
 
-const predictions = await model.executeAsync(input);
-const output = predictions.transpose([0, 2, 1]).squeeze(0);
+        requestAnimationFrame(detectFrame);
+    }
+    
+    function updateWordCloud() {
+        const list = Object.entries(detectedObjects).map(([text, count]) => {
+            const weight = Math.log2(count + 1) * 8; // 少し大きく
+            return [text, weight];
+        });
 
-const boxes = [];
-const scores = [];
-const class_indices = [];
-const confidenceThreshold = 0.25;
-const iouThreshold = 0.45;
+        if (list.length > 0) {
+            WordCloud(wordcloudCanvas, { 
+                list: list,
+                backgroundColor: '#ffffff',
+                color: 'random-dark',
+                weightFactor: 2.5
+            });
+        }
+    }
+    
+    // メイン処理も、モデルの読み込み方が変わります
+    async function main() {
+        try {
+            await setupWebcam();
+            console.log("Webcam setup complete.");
 
-for (let i = 0; i < output.shape[0]; i++) {
-const detection = output.slice(i, 1).squeeze();
-const obj_score = detection.slice(4, 1).dataSync()[0];
+            console.log("Loading COCO-SSD model...");
+            loaderElement.innerText = "公式モデルを読み込んでいます...";
+            
+            // ★★★ モデルの読み込み方が、この1行に変わります！ ★★★
+            model = await cocoSsd.load(); 
+            
+            console.log("Model loaded.");
+            loaderElement.style.display = 'none';
 
-if (obj_score > confidenceThreshold) {
-const class_probabilities = detection.slice(5);
-const class_index = class_probabilities.argMax().dataSync()[0];
-const score = obj_score * class_probabilities.max().dataSync()[0];
+            detectFrame();
+            setInterval(updateWordCloud, 3000);
+        } catch (e) {
+            console.error(e);
+            loaderElement.innerText = "エラーが発生しました。コンソールを確認してください。";
+        }
+    }
 
-if (score > confidenceThreshold) {
-const [x_center, y_center, width, height] = detection.slice(0, 4).dataSync();
-boxes.push([
-y_center - height / 2, // y1
-x_center - width / 2, // x1
-y_center + height / 2, // y2
-x_center + width / 2 // x2
-]);
-scores.push(score);
-class_indices.push(class_index);
-}
-}
-}
-
-canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-if (boxes.length > 0) {
-const nms_indices = await tf.image.nonMaxSuppressionAsync(boxes, scores, 50, iouThreshold, confidenceThreshold);
-const selected_indices = nms_indices.dataSync();
-
-const currentDetections = {};
-
-for (const index of selected_indices) {
-const [y1, x1, y2, x2] = boxes[index];
-const score = scores[index];
-let klass = cocoSsdLabels[class_indices[index]];
-
-// ★★★ ここが修正点！ ★★★
-// もし辞書にない単語(undefined)だったら、'unknown'として扱う
-if (klass === undefined) {
-klass = 'unknown';
-}
-
-const box_x = x1 * canvasElement.width;
-const box_y = y1 * canvasElement.height;
-const box_width = (x2 - x1) * canvasElement.width;
-const box_height = (y2 - y1) * canvasElement.height;
-
-canvasCtx.strokeStyle = "#00FF00";
-canvasCtx.lineWidth = 2;
-canvasCtx.strokeRect(box_x, box_y, box_width, box_height);
-
-canvasCtx.fillStyle = "#00FF00";
-const font = "18px Arial";
-canvasCtx.font = font;
-const text = `${klass} ${score.toFixed(2)}`;
-const textWidth = canvasCtx.measureText(text).width;
-canvasCtx.fillRect(box_x - 1, box_y - 20, textWidth + 4, 22);
-
-canvasCtx.fillStyle = "#000000";
-canvasCtx.fillText(text, box_x + 1, box_y - 5);
-
-if (currentDetections[klass]) {
-currentDetections[klass]++;
-} else {
-currentDetections[klass] = 1;
-}
-}
-
-for(const key in currentDetections) {
-if(detectedObjects[key]){
-detectedObjects[key]++;
-} else {
-detectedObjects[key] = 1;
-}
-}
-}
-
-tf.engine().endScope();
-requestAnimationFrame(detectFrame);
-}
-// ワードクラウドをリセットする新しい関数
-function resetWordCloud() {
-    detectedObjects = {}; // カウントを空にする
-    const context = wordcloudCanvas.getContext('2d');
-    context.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height); // 表示も消す
-    console.log("Word cloud has been reset.");
-}
-
-function updateWordCloud() {
-const list = Object.entries(detectedObjects).map(([text, count]) => {
-const weight = Math.log2(count + 1) * 5;
-return [text, weight];
-});
-
-if (list.length > 0) {
-WordCloud(wordcloudCanvas, {
-list: list,
-backgroundColor: '#ffffff',
-color: 'random-dark',
-weightFactor: 2.5
-});
-}
-}
-
-async function main() {
-try {
-await setupWebcam();
-console.log("Webcam setup complete.");
-
-console.log("Loading model...");
-model = await tf.loadGraphModel('model/model.json');
-console.log("Model loaded.");
-loaderElement.style.display = 'none';
-
-detectFrame();
-setInterval(updateWordCloud, 3000);
-} catch (e) {
-console.error(e);
-loaderElement.innerText = "エラーが発生しました。コンソールを確認してください。";
-}
-}
-
-main();
+    main();
 </script>
 </body>
 </html>
