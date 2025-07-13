@@ -102,6 +102,7 @@
         </div>
         <div class="panel wordcloud-container">
             <h1>Detected Objects</h1>
+            <button onclick="resetWordCloud()">Reset Cloud</button> <!-- ← この行を追加 -->
             <div id="wordcloud-wrapper">
                 <canvas id="wordcloud"></canvas>
             </div>
@@ -265,6 +266,13 @@ detectedObjects[key] = 1;
 
 tf.engine().endScope();
 requestAnimationFrame(detectFrame);
+}
+// ワードクラウドをリセットする新しい関数
+function resetWordCloud() {
+    detectedObjects = {}; // カウントを空にする
+    const context = wordcloudCanvas.getContext('2d');
+    context.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height); // 表示も消す
+    console.log("Word cloud has been reset.");
 }
 
 function updateWordCloud() {
