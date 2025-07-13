@@ -127,7 +127,6 @@
     let model;
     let detectedObjects = {};
 
-    // COCO-SSDのラベル配列
     const cocoSsdLabels = [
         'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
         'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
@@ -140,7 +139,6 @@
         'hair drier', 'toothbrush'
     ];
     
-    // ウェブカメラをセットアップ
     async function setupWebcam() {
         return new Promise((resolve, reject) => {
             const navigatorAny = navigator;
@@ -148,7 +146,7 @@
                 navigatorAny.webkitGetUserMedia || navigatorAny.mozGetUserMedia ||
                 navigatorAny.msGetUserMedia;
             if (navigator.getUserMedia) {
-                navigator.getUserMedia({ video: { facingMode: 'environment' } },
+                navigator.getUserMedia({ video: { facingMode: 'user' } }, // 'user'でインカメラを優先
                     stream => {
                         webcamElement.srcObject = stream;
                         webcamElement.addEventListener('loadeddata', () => {
@@ -167,7 +165,7 @@
         });
     }
 
-    // 物体検出をフレームごとに行う (完全に修正済みのバージョン)
+    // 物体検出をフレームごとに行う (診断用バージョン)
     async function detectFrame() {
         if (!model) return;
 
@@ -183,11 +181,9 @@
         const predictions = await model.executeAsync(input);
         const output = predictions.transpose([0, 2, 1]).squeeze(0);
 
-        const boxes = [];
-        const scores = [];
-        const class_indices = [];
         const confidenceThreshold = 0.25;
-        const iouThreshold = 0.5;
+        const currentDetections = {};
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
         for (let i = 0; i < output.shape[0]; i++) {
             const detection = output.slice(i, 1).squeeze();
@@ -199,64 +195,46 @@
                 const score = obj_score * class_probabilities.max().dataSync()[0];
                 
                 if (score > confidenceThreshold) {
-                    const [x_center, y_center, width, height] = detection.slice(0, 4).dataSync();
-                    boxes.push([
-                        y_center - height / 2, // y1 (YOLOはyが先の場合がある)
-                        x_center - width / 2,  // x1
-                        y_center + height / 2, // y2
-                        x_center + width / 2   // x2
-                    ]);
-                    scores.push(score);
-                    class_indices.push(class_index);
+                    const [x_center_norm, y_center_norm, width_norm, height_norm] = detection.slice(0, 4).dataSync();
+                    
+                    // NMSを介さず、直接描画する
+                    const box_width = width_norm * canvasElement.width;
+                    const box_height = height_norm * canvasElement.height;
+                    const box_x = (x_center_norm * canvasElement.width) - (box_width / 2);
+                    const box_y = (y_center_norm * canvasElement.height) - (box_height / 2);
+                    
+                    const klass = cocoSsdLabels[class_index];
+
+                    // バウンディングボックスを描画
+                    canvasCtx.strokeStyle = "#00FF00"; // 色を緑に変更して見やすく
+                    canvasCtx.lineWidth = 2;
+                    canvasCtx.strokeRect(box_x, box_y, box_width, box_height);
+                    
+                    // ラベルを描画
+                    canvasCtx.fillStyle = "#00FF00";
+                    const font = "18px Arial";
+                    canvasCtx.font = font;
+                    const text = `${klass} ${score.toFixed(2)}`;
+                    const textWidth = canvasCtx.measureText(text).width;
+                    canvasCtx.fillRect(box_x - 1, box_y - 20, textWidth + 4, 22);
+
+                    canvasCtx.fillStyle = "#000000";
+                    canvasCtx.fillText(text, box_x + 1, box_y - 5);
+
+                    if (currentDetections[klass]) {
+                        currentDetections[klass]++;
+                    } else {
+                        currentDetections[klass] = 1;
+                    }
                 }
             }
         }
         
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        
-        if (boxes.length > 0) {
-            const nms_indices = await tf.image.nonMaxSuppressionAsync(boxes, scores, 50, iouThreshold, confidenceThreshold);
-            const selected_indices = nms_indices.dataSync();
-            
-            const currentDetections = {};
-
-            for (const index of selected_indices) {
-                const [y1, x1, y2, x2] = boxes[index];
-                const score = scores[index];
-                const klass = cocoSsdLabels[class_indices[index]];
-
-                const box_x = x1 * canvasElement.width;
-                const box_y = y1 * canvasElement.height;
-                const box_width = (x2 - x1) * canvasElement.width;
-                const box_height = (y2 - y1) * canvasElement.height;
-
-                canvasCtx.strokeStyle = "#00FFFF";
-                canvasCtx.lineWidth = 2;
-                canvasCtx.strokeRect(box_x, box_y, box_width, box_height);
-
-                canvasCtx.fillStyle = "#00FFFF";
-                const font = "18px Arial";
-                canvasCtx.font = font;
-                const text = `${klass} ${score.toFixed(2)}`;
-                const textWidth = canvasCtx.measureText(text).width;
-                canvasCtx.fillRect(box_x -1, box_y - 20, textWidth + 4, 22);
-
-                canvasCtx.fillStyle = "#000000";
-                canvasCtx.fillText(text, box_x + 1, box_y - 5);
-                
-                if (currentDetections[klass]) {
-                    currentDetections[klass]++;
-                } else {
-                    currentDetections[klass] = 1;
-                }
-            }
-            
-            for(const key in currentDetections) {
-                if(detectedObjects[key]){
-                    detectedObjects[key]++;
-                } else {
-                    detectedObjects[key] = 1;
-                }
+        for(const key in currentDetections) {
+            if(detectedObjects[key]){
+                detectedObjects[key]++;
+            } else {
+                detectedObjects[key] = 1;
             }
         }
 
@@ -264,7 +242,6 @@
         requestAnimationFrame(detectFrame);
     }
     
-    // ワードクラウドを更新
     function updateWordCloud() {
         const list = Object.entries(detectedObjects).map(([text, count]) => {
             const weight = Math.log2(count + 1) * 5;
@@ -281,7 +258,6 @@
         }
     }
     
-    // メイン処理
     async function main() {
         try {
             await setupWebcam();
