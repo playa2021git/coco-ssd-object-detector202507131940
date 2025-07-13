@@ -113,161 +113,144 @@
     <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.js"></script>
 
     <!-- JavaScriptをHTMLに埋め込み -->
-    <script>
-        const webcamElement = document.getElementById('webcam');
-        const canvasElement = document.getElementById('canvas');
-        const wordcloudCanvas = document.getElementById('wordcloud');
-        const loaderElement = document.getElementById('loader');
-        const canvasCtx = canvasElement.getContext('2d');
+   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.js"></script>
 
-        let model;
-        let detectedObjects = {};
+<!-- JavaScriptをHTMLに埋め込み -->
+<script>
+    const webcamElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('canvas');
+    const wordcloudCanvas = document.getElementById('wordcloud');
+    const loaderElement = document.getElementById('loader');
+    const canvasCtx = canvasElement.getContext('2d');
 
-        // COCO-SSDのラベル配列 (YOLOモデルに合わせて変更してください)
-        const cocoSsdLabels = [
-            'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
-            'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
-            'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
-            'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
-            'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
-            'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
-            'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
-            'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
-            'hair drier', 'toothbrush'
-        ];
+    let model;
+    let detectedObjects = {};
+
+    // COCO-SSDのラベル配列
+    const cocoSsdLabels = [
+        'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+        'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+        'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
+        'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
+        'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+        'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
+        'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
+        'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
+        'hair drier', 'toothbrush'
+    ];
+    
+    // ウェブカメラをセットアップ
+    async function setupWebcam() {
+        return new Promise((resolve, reject) => {
+            const navigatorAny = navigator;
+            navigator.getUserMedia = navigator.getUserMedia ||
+                navigatorAny.webkitGetUserMedia || navigatorAny.mozGetUserMedia ||
+                navigatorAny.msGetUserMedia;
+            if (navigator.getUserMedia) {
+                navigator.getUserMedia({ video: { facingMode: 'environment' } },
+                    stream => {
+                        webcamElement.srcObject = stream;
+                        webcamElement.addEventListener('loadeddata', () => {
+                            resolve();
+                        }, false);
+                    },
+                    error => {
+                        console.error("Webcam access error:", error);
+                        loaderElement.innerText = "ウェブカメラにアクセスできません。";
+                        reject();
+                    });
+            } else {
+                loaderElement.innerText = "お使いのブラウザはウェブカメラに対応していません。";
+                reject();
+            }
+        });
+    }
+
+    // 物体検出をフレームごとに行う (完全に修正済みのバージョン)
+    async function detectFrame() {
+        if (!model) return;
+
+        tf.engine().startScope();
+
+        const videoWidth = webcamElement.videoWidth;
+        const videoHeight = webcamElement.videoHeight;
+        canvasElement.width = videoWidth;
+        canvasElement.height = videoHeight;
         
-        // ウェブカメラをセットアップ
-        async function setupWebcam() {
-            return new Promise((resolve, reject) => {
-                const navigatorAny = navigator;
-                navigator.getUserMedia = navigator.getUserMedia ||
-                    navigatorAny.webkitGetUserMedia || navigatorAny.mozGetUserMedia ||
-                    navigatorAny.msGetUserMedia;
-                if (navigator.getUserMedia) {
-                    navigator.getUserMedia({ video: { facingMode: 'environment' } }, // 背面カメラを優先
-                        stream => {
-                            webcamElement.srcObject = stream;
-                            webcamElement.addEventListener('loadeddata', () => {
-                                resolve();
-                            }, false);
-                        },
-                        error => {
-                            console.error("Webcam access error:", error);
-                            loaderElement.innerText = "ウェブカメラにアクセスできません。";
-                            reject();
-                        });
-                } else {
-                    loaderElement.innerText = "お使いのブラウザはウェブカメラに対応していません。";
-                    reject();
+        const input = tf.browser.fromPixels(webcamElement).resizeBilinear([640, 640]).div(255.0).expandDims(0).transpose([0, 3, 1, 2]);
+
+        const predictions = await model.executeAsync(input);
+        const output = predictions.transpose([0, 2, 1]).squeeze(0);
+
+        const boxes = [];
+        const scores = [];
+        const class_indices = [];
+        const confidenceThreshold = 0.45;
+        const iouThreshold = 0.5;
+
+        for (let i = 0; i < output.shape[0]; i++) {
+            const detection = output.slice(i, 1).squeeze();
+            const obj_score = detection.slice(4, 1).dataSync()[0];
+            
+            if (obj_score > confidenceThreshold) {
+                const class_probabilities = detection.slice(5);
+                const class_index = class_probabilities.argMax().dataSync()[0];
+                const score = obj_score * class_probabilities.max().dataSync()[0];
+                
+                if (score > confidenceThreshold) {
+                    const [x_center, y_center, width, height] = detection.slice(0, 4).dataSync();
+                    boxes.push([
+                        y_center - height / 2, // y1 (YOLOはyが先の場合がある)
+                        x_center - width / 2,  // x1
+                        y_center + height / 2, // y2
+                        x_center + width / 2   // x2
+                    ]);
+                    scores.push(score);
+                    class_indices.push(class_index);
                 }
-            });
+            }
         }
         
-        // 物体検出をフレームごとに行う
-       async function detectFrame() {
-    if (!model) return;
-
-    tf.engine().startScope();
-
-    // 1. Pre-process the image
-    const videoWidth = webcamElement.videoWidth;
-    const videoHeight = webcamElement.videoHeight;
-    canvasElement.width = videoWidth;
-    canvasElement.height = videoHeight;
-    
-    const input = tf.browser.fromPixels(webcamElement).resizeBilinear([640, 640]).div(255.0).expandDims(0).transpose([0, 3, 1, 2]);
-
-    // 2. Run inference
-    const predictions = await model.executeAsync(input);
-    const output = predictions.transpose([0, 2, 1]).squeeze(0); // [1, 85, 25200] -> [25200, 85]
-
-    // 3. Post-process the output
-    const boxes = [];
-    const scores = [];
-    const class_indices = [];
-    const confidenceThreshold = 0.45; // 信頼度の閾値
-    const iouThreshold = 0.5; // IOUの閾値
-
-    for (let i = 0; i < output.shape[0]; i++) {
-        const detection = output.slice(i, 1).squeeze();
-        const obj_score = detection.slice(4, 1).dataSync()[0];
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
         
-        if (obj_score > confidenceThreshold) {
-            const class_probabilities = detection.slice(5);
-            const class_index = class_probabilities.argMax().dataSync()[0];
-            const score = obj_score * class_probabilities.max().dataSync()[0];
+        if (boxes.length > 0) {
+            const nms_indices = await tf.image.nonMaxSuppressionAsync(boxes, scores, 50, iouThreshold, confidenceThreshold);
+            const selected_indices = nms_indices.dataSync();
             
-            if (score > confidenceThreshold) {
-                const [x_center, y_center, width, height] = detection.slice(0, 4).dataSync();
-                boxes.push([
-                    x_center - width / 2,   // x1
-                    y_center - height / 2,  // y1
-                    x_center + width / 2,   // x2
-                    y_center + height / 2   // y2
-                ]);
-                scores.push(score);
-                class_indices.push(class_index);
+            const currentDetections = {};
+
+            for (const index of selected_indices) {
+                const [y1, x1, y2, x2] = boxes[index];
+                const score = scores[index];
+                const klass = cocoSsdLabels[class_indices[index]];
+
+                const box_x = x1 * canvasElement.width;
+                const box_y = y1 * canvasElement.height;
+                const box_width = (x2 - x1) * canvasElement.width;
+                const box_height = (y2 - y1) * canvasElement.height;
+
+                canvasCtx.strokeStyle = "#00FFFF";
+                canvasCtx.lineWidth = 2;
+                canvasCtx.strokeRect(box_x, box_y, box_width, box_height);
+
+                canvasCtx.fillStyle = "#00FFFF";
+                const font = "18px Arial";
+                canvasCtx.font = font;
+                const text = `${klass} ${score.toFixed(2)}`;
+                const textWidth = canvasCtx.measureText(text).width;
+                canvasCtx.fillRect(box_x -1, box_y - 20, textWidth + 4, 22);
+
+                canvasCtx.fillStyle = "#000000";
+                canvasCtx.fillText(text, box_x + 1, box_y - 5);
+                
+                if (currentDetections[klass]) {
+                    currentDetections[klass]++;
+                } else {
+                    currentDetections[klass] = 1;
+                }
             }
-        }
-    }
-    
-    // 4. Apply Non-Max Suppression
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    
-    if (boxes.length > 0) {
-        const nms_indices = await tf.image.nonMaxSuppressionAsync(boxes, scores, 50, iouThreshold, confidenceThreshold);
-        const selected_indices = nms_indices.dataSync();
-        
-        const currentDetections = {};
-
-        // 5. Draw the results
-        for (const index of selected_indices) {
-            const [x1, y1, x2, y2] = boxes[index];
-            const score = scores[index];
-            const klass = cocoSsdLabels[class_indices[index]];
-
-            // Draw bounding box and label
-            const box_x = x1 * canvasElement.width;
-            const box_y = y1 * canvasElement.height;
-            const box_width = (x2 - x1) * canvasElement.width;
-            const box_height = (y2 - y1) * canvasElement.height;
-
-            canvasCtx.strokeStyle = "#00FFFF";
-            canvasCtx.lineWidth = 2;
-            canvasCtx.strokeRect(box_x, box_y, box_width, box_height);
-
-            canvasCtx.fillStyle = "#00FFFF";
-            const font = "18px Arial";
-            canvasCtx.font = font;
-            const text = `${klass} ${score.toFixed(2)}`;
-            const textWidth = canvasCtx.measureText(text).width;
-            canvasCtx.fillRect(box_x -1, box_y - 20, textWidth + 4, 22);
-
-            canvasCtx.fillStyle = "#000000";
-            canvasCtx.fillText(text, box_x + 1, box_y - 5);
             
-            // Update detected objects count
-            if (currentDetections[klass]) {
-                currentDetections[klass]++;
-            } else {
-                currentDetections[klass] = 1;
-            }
-        }
-        
-        for(const key in currentDetections) {
-            if(detectedObjects[key]){
-                detectedObjects[key]++;
-            } else {
-                detectedObjects[key] = 1;
-            }
-        }
-    }
-
-    tf.engine().endScope();
-    requestAnimationFrame(detectFrame);
-}
-
-            // 全体のオブジェクトカウントを更新
             for(const key in currentDetections) {
                 if(detectedObjects[key]){
                     detectedObjects[key]++;
@@ -275,50 +258,49 @@
                     detectedObjects[key] = 1;
                 }
             }
-
-            tf.engine().endScope();
-            requestAnimationFrame(detectFrame);
         }
-        
-        // ワードクラウドを更新
-        function updateWordCloud() {
-            const list = Object.entries(detectedObjects).map(([text, count]) => {
-                // 対数スケールなどで重みを調整すると見やすくなる
-                const weight = Math.log2(count + 1) * 5;
-                return [text, weight];
+
+        tf.engine().endScope();
+        requestAnimationFrame(detectFrame);
+    }
+    
+    // ワードクラウドを更新
+    function updateWordCloud() {
+        const list = Object.entries(detectedObjects).map(([text, count]) => {
+            const weight = Math.log2(count + 1) * 5;
+            return [text, weight];
+        });
+
+        if (list.length > 0) {
+            WordCloud(wordcloudCanvas, { 
+                list: list,
+                backgroundColor: '#ffffff',
+                color: 'random-dark',
+                weightFactor: 2.5
             });
-
-            if (list.length > 0) {
-                WordCloud(wordcloudCanvas, { 
-                    list: list,
-                    backgroundColor: '#ffffff',
-                    color: 'random-dark',
-                    weightFactor: 2.5 // 文字サイズを調整
-                });
-            }
         }
-        
-        // メイン処理
-        async function main() {
-            try {
-                await setupWebcam();
-                console.log("Webcam setup complete.");
+    }
+    
+    // メイン処理
+    async function main() {
+        try {
+            await setupWebcam();
+            console.log("Webcam setup complete.");
 
-                console.log("Loading model...");
-                // **重要**: 'model/model.json' はサーバー上のパスです。
-                model = await tf.loadGraphModel('model/model.json');
-                console.log("Model loaded.");
-                loaderElement.style.display = 'none'; // ローダーを非表示に
+            console.log("Loading model...");
+            model = await tf.loadGraphModel('model/model.json');
+            console.log("Model loaded.");
+            loaderElement.style.display = 'none';
 
-                detectFrame(); // 検出ループを開始
-                setInterval(updateWordCloud, 3000); // 3秒ごとにワードクラウドを更新
-            } catch (e) {
-                console.error(e);
-            }
+            detectFrame();
+            setInterval(updateWordCloud, 3000);
+        } catch (e) {
+            console.error(e);
+            loaderElement.innerText = "エラーが発生しました。コンソールを確認してください。";
         }
+    }
 
-        main();
-
-    </script>
+    main();
+</script>
 </body>
 </html>
