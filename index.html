@@ -164,71 +164,108 @@
         }
         
         // 物体検出をフレームごとに行う
-        async function detectFrame() {
-            if (!model) return;
+       async function detectFrame() {
+    if (!model) return;
 
-            tf.engine().startScope();
+    tf.engine().startScope();
+
+    // 1. Pre-process the image
+    const videoWidth = webcamElement.videoWidth;
+    const videoHeight = webcamElement.videoHeight;
+    canvasElement.width = videoWidth;
+    canvasElement.height = videoHeight;
+    
+    const input = tf.browser.fromPixels(webcamElement).resizeBilinear([640, 640]).div(255.0).expandDims(0).transpose([0, 3, 1, 2]);
+
+    // 2. Run inference
+    const predictions = await model.executeAsync(input);
+    const output = predictions.transpose([0, 2, 1]).squeeze(0); // [1, 85, 25200] -> [25200, 85]
+
+    // 3. Post-process the output
+    const boxes = [];
+    const scores = [];
+    const class_indices = [];
+    const confidenceThreshold = 0.45; // 信頼度の閾値
+    const iouThreshold = 0.5; // IOUの閾値
+
+    for (let i = 0; i < output.shape[0]; i++) {
+        const detection = output.slice(i, 1).squeeze();
+        const obj_score = detection.slice(4, 1).dataSync()[0];
+        
+        if (obj_score > confidenceThreshold) {
+            const class_probabilities = detection.slice(5);
+            const class_index = class_probabilities.argMax().dataSync()[0];
+            const score = obj_score * class_probabilities.max().dataSync()[0];
             
-            // ビデオの現在のサイズを取得
-            const videoWidth = webcamElement.videoWidth;
-            const videoHeight = webcamElement.videoHeight;
-
-            // キャンバスのサイズをビデオに合わせる
-            canvasElement.width = videoWidth;
-            canvasElement.height = videoHeight;
-
-            const input = tf.browser.fromPixels(webcamElement).resizeBilinear([640, 640]).div(255.0).expandDims(0).transpose([0, 3, 1, 2]);
-            const predictions = await model.executeAsync(input);
-
-            // モデルの出力形式は変換したモデルに依存します。これは一般的な例です。
-            // [boxes, scores, classes, valid_detections]
-            const [boxes, scores, classes, valid_detections] = predictions;
-            const boxes_data = boxes.dataSync();
-            const scores_data = scores.dataSync();
-            const classes_data = classes.dataSync();
-            const valid_detections_data = valid_detections.dataSync()[0];
-
-            // 以前の描画をクリア
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-            const currentDetections = {};
-
-            for (let i = 0; i < valid_detections_data; ++i) {
-                if (scores_data[i] < 0.5) { // 信頼度が50%未満のものは無視
-                    continue;
-                }
-                
-                let [x1, y1, x2, y2] = boxes_data.slice(i * 4, (i + 1) * 4);
-                x1 *= canvasElement.width;
-                x2 *= canvasElement.width;
-                y1 *= canvasElement.height;
-                y2 *= canvasElement.height;
-                const width = x2 - x1;
-                const height = y2 - y1;
-                const klass = cocoSsdLabels[classes_data[i]];
-                const score = scores_data[i].toFixed(2);
-
-                // バウンディングボックスとラベルを描画
-                canvasCtx.strokeStyle = "#00FFFF";
-                canvasCtx.lineWidth = 2;
-                canvasCtx.strokeRect(x1, y1, width, height);
-
-                canvasCtx.fillStyle = "#00FFFF";
-                const font = "18px Arial";
-                canvasCtx.font = font;
-                const textWidth = canvasCtx.measureText(klass + " " + score).width;
-                canvasCtx.fillRect(x1 -1, y1 - 20, textWidth + 4, 22);
-
-                canvasCtx.fillStyle = "#000000";
-                canvasCtx.fillText(`${klass} ${score}`, x1 + 1, y1 - 5);
-
-                // 検出されたオブジェクトをカウント
-                if (currentDetections[klass]) {
-                    currentDetections[klass]++;
-                } else {
-                    currentDetections[klass] = 1;
-                }
+            if (score > confidenceThreshold) {
+                const [x_center, y_center, width, height] = detection.slice(0, 4).dataSync();
+                boxes.push([
+                    x_center - width / 2,   // x1
+                    y_center - height / 2,  // y1
+                    x_center + width / 2,   // x2
+                    y_center + height / 2   // y2
+                ]);
+                scores.push(score);
+                class_indices.push(class_index);
             }
+        }
+    }
+    
+    // 4. Apply Non-Max Suppression
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    
+    if (boxes.length > 0) {
+        const nms_indices = await tf.image.nonMaxSuppressionAsync(boxes, scores, 50, iouThreshold, confidenceThreshold);
+        const selected_indices = nms_indices.dataSync();
+        
+        const currentDetections = {};
+
+        // 5. Draw the results
+        for (const index of selected_indices) {
+            const [x1, y1, x2, y2] = boxes[index];
+            const score = scores[index];
+            const klass = cocoSsdLabels[class_indices[index]];
+
+            // Draw bounding box and label
+            const box_x = x1 * canvasElement.width;
+            const box_y = y1 * canvasElement.height;
+            const box_width = (x2 - x1) * canvasElement.width;
+            const box_height = (y2 - y1) * canvasElement.height;
+
+            canvasCtx.strokeStyle = "#00FFFF";
+            canvasCtx.lineWidth = 2;
+            canvasCtx.strokeRect(box_x, box_y, box_width, box_height);
+
+            canvasCtx.fillStyle = "#00FFFF";
+            const font = "18px Arial";
+            canvasCtx.font = font;
+            const text = `${klass} ${score.toFixed(2)}`;
+            const textWidth = canvasCtx.measureText(text).width;
+            canvasCtx.fillRect(box_x -1, box_y - 20, textWidth + 4, 22);
+
+            canvasCtx.fillStyle = "#000000";
+            canvasCtx.fillText(text, box_x + 1, box_y - 5);
+            
+            // Update detected objects count
+            if (currentDetections[klass]) {
+                currentDetections[klass]++;
+            } else {
+                currentDetections[klass] = 1;
+            }
+        }
+        
+        for(const key in currentDetections) {
+            if(detectedObjects[key]){
+                detectedObjects[key]++;
+            } else {
+                detectedObjects[key] = 1;
+            }
+        }
+    }
+
+    tf.engine().endScope();
+    requestAnimationFrame(detectFrame);
+}
 
             // 全体のオブジェクトカウントを更新
             for(const key in currentDetections) {
