@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>リアルタイム物体検出アプリ (シングルファイル版)</title>
+    <title>リアルタイム物体検出アプリ (完成版)</title>
     
     <!-- CSSをHTMLに埋め込み -->
     <style>
@@ -20,9 +20,14 @@
             height: 100vh;
             box-sizing: border-box;
         }
-        .panel {
-            flex: 1;
-            min-width: 300px;
+        h1 {
+            color: #333;
+            text-align: center;
+            width: 100%;
+        }
+        /* ★★★ ここが修正点！ ★★★ */
+        .video-container {
+            flex: 2; /* 画面の2/3の幅を確保 */
             padding: 20px;
             box-sizing: border-box;
             display: flex;
@@ -31,15 +36,21 @@
             justify-content: center;
             position: relative;
         }
-        h1 {
-            color: #333;
-            text-align: center;
-            width: 100%;
+        .wordcloud-container {
+            flex: 1; /* 画面の1/3の幅を確保 */
+            min-width: 300px; /* 小さくなりすぎないように */
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
         }
         .video-wrapper {
             position: relative;
-            width: 90%;
-            max-width: 640px;
+            width: 95%; /* 横幅いっぱいに広げる */
+            max-width: 960px; /* 大きくなりすぎないように制限 */
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
@@ -52,7 +63,7 @@
             height: 100%;
         }
         #webcam {
-            position: relative; /* to maintain aspect ratio */
+            position: relative;
             display: block;
         }
         #canvas {
@@ -84,15 +95,12 @@
                 flex-direction: column;
                 height: auto;
             }
-            .panel {
-                height: 50vh;
-            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="panel video-container">
+        <div class="video-container">
             <h1>Webcam Feed</h1>
             <div class="video-wrapper">
                 <video id="webcam" autoplay playsinline muted></video>
@@ -100,162 +108,144 @@
             </div>
              <div id="loader" class="loader">モデルを読み込んでいます...</div>
         </div>
-        <div class="panel wordcloud-container">
+        <div class="wordcloud-container">
             <h1>Detected Objects</h1>
-            <button onclick="resetWordCloud()">Reset Cloud</button> <!-- ← この行を追加 -->
+            <button onclick="resetWordCloud()">Reset Cloud</button>
             <div id="wordcloud-wrapper">
                 <canvas id="wordcloud"></canvas>
             </div>
         </div>
     </div>
 
-    <!-- 外部ライブラリをCDNから読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.js"></script>
 
-    <!-- JavaScriptをHTMLに埋め込み -->
-   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script> <!-- ★新しい公式ライブラリ★ -->
-<script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.js"></script>
+    <script>
+        const webcamElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('canvas');
+        const wordcloudCanvas = document.getElementById('wordcloud');
+        const loaderElement = document.getElementById('loader');
+        const canvasCtx = canvasElement.getContext('2d');
 
-<!-- JavaScriptをHTMLに埋め込み -->
-<script>
-    const webcamElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('canvas');
-    const wordcloudCanvas = document.getElementById('wordcloud');
-    const loaderElement = document.getElementById('loader');
-    const canvasCtx = canvasElement.getContext('2d');
+        let model;
+        let detectedObjects = {};
 
-    let model;
-    let detectedObjects = {};
-
-    // ワードクラウドをリセットする関数
-    function resetWordCloud() {
-        detectedObjects = {};
-        const context = wordcloudCanvas.getContext('2d');
-        if (context) {
-            context.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
-        }
-        console.log("Word cloud has been reset.");
-    }
-    
-    async function setupWebcam() {
-        return new Promise((resolve, reject) => {
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-                    .then(stream => {
-                        webcamElement.srcObject = stream;
-                        webcamElement.addEventListener('loadeddata', resolve, false);
-                    })
-                    .catch(error => {
-                        console.error("Webcam access error:", error);
-                        loaderElement.innerText = "ウェブカメラにアクセスできません。";
-                        reject();
-                    });
-            } else {
-                loaderElement.innerText = "お使いのブラウザはウェブカメラに対応していません。";
-                reject();
+        function resetWordCloud() {
+            detectedObjects = {};
+            const context = wordcloudCanvas.getContext('2d');
+            if (context) {
+                context.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
             }
-        });
-    }
-
-    // Google公式モデル(COCO-SSD)用に書き換えた、新しい物体検出関数
-    async function detectFrame() {
-        if (!model) return;
-
-        // ★★★ 予測の実行が非常にシンプルになります！ ★★★
-        const predictions = await model.detect(webcamElement);
-
-        // 描画の前にキャンバスをクリア
-        canvasElement.width = webcamElement.videoWidth;
-        canvasElement.height = webcamElement.videoHeight;
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        
-        const currentDetections = {};
-        
-        // ★★★ 予測結果の処理も、非常にシンプルになります！ ★★★
-        for (let i = 0; i < predictions.length; i++) {
-            const prediction = predictions[i];
-            const [x, y, width, height] = prediction.bbox;
-            const klass = prediction.class;
-            const score = prediction.score;
-
-            // バウンディングボックスを描画
-            canvasCtx.strokeStyle = "#00FF00";
-            canvasCtx.lineWidth = 4; // 少し太くして見やすく
-            canvasCtx.strokeRect(x, y, width, height);
-
-            // ラベルを描画
-            canvasCtx.fillStyle = "#00FF00";
-            const font = "20px Arial";
-            canvasCtx.font = font;
-            const text = `${klass} ${score.toFixed(2)}`;
-            const textWidth = canvasCtx.measureText(text).width;
-            canvasCtx.fillRect(x, y, textWidth + 8, 24);
-            canvasCtx.fillStyle = "#000000";
-            canvasCtx.fillText(text, x + 4, y + 18);
-            
-            // ワードクラウド用のカウント
-            if (currentDetections[klass]) {
-                currentDetections[klass]++;
-            } else {
-                currentDetections[klass] = 1;
-            }
+            console.log("Word cloud has been reset.");
         }
         
-        // 全体のカウントを更新
-        for(const key in currentDetections) {
-            if(detectedObjects[key]){
-                detectedObjects[key]++;
-            } else {
-                detectedObjects[key] = 1;
-            }
-        }
-
-        requestAnimationFrame(detectFrame);
-    }
-    
-    function updateWordCloud() {
-        const list = Object.entries(detectedObjects).map(([text, count]) => {
-            const weight = Math.log2(count + 1) * 8; // 少し大きく
-            return [text, weight];
-        });
-
-        if (list.length > 0) {
-            WordCloud(wordcloudCanvas, { 
-                list: list,
-                backgroundColor: '#ffffff',
-                color: 'random-dark',
-                weightFactor: 2.5
+        async function setupWebcam() {
+            return new Promise((resolve, reject) => {
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+                        .then(stream => {
+                            webcamElement.srcObject = stream;
+                            webcamElement.addEventListener('loadeddata', resolve, false);
+                        })
+                        .catch(error => {
+                            console.error("Webcam access error:", error);
+                            loaderElement.innerText = "ウェブカメラにアクセスできません。";
+                            reject();
+                        });
+                } else {
+                    loaderElement.innerText = "お使いのブラウザはウェブカメラに対応していません。";
+                    reject();
+                }
             });
         }
-            detectedObjects = {}; // ★★★ この1行を追加！3秒ごとに記憶をリセットする ★★★
-    }
-    
-    // メイン処理も、モデルの読み込み方が変わります
-    async function main() {
-        try {
-            await setupWebcam();
-            console.log("Webcam setup complete.");
 
-            console.log("Loading COCO-SSD model...");
-            loaderElement.innerText = "公式モデルを読み込んでいます...";
-            
-            // ★★★ モデルの読み込み方が、この1行に変わります！ ★★★
-            model = await cocoSsd.load(); 
-            
-            console.log("Model loaded.");
-            loaderElement.style.display = 'none';
+        async function detectFrame() {
+            if (!model) return;
 
-            detectFrame();
-            setInterval(updateWordCloud, 3000);
-        } catch (e) {
-            console.error(e);
-            loaderElement.innerText = "エラーが発生しました。コンソールを確認してください。";
+            const predictions = await model.detect(webcamElement);
+
+            canvasElement.width = webcamElement.videoWidth;
+            canvasElement.height = webcamElement.videoHeight;
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            const currentDetections = {};
+            
+            for (let i = 0; i < predictions.length; i++) {
+                const prediction = predictions[i];
+                const [x, y, width, height] = prediction.bbox;
+                const klass = prediction.class;
+                const score = prediction.score;
+
+                canvasCtx.strokeStyle = "#00FF00";
+                canvasCtx.lineWidth = 4;
+                canvasCtx.strokeRect(x, y, width, height);
+
+                canvasCtx.fillStyle = "#00FF00";
+                const font = "20px Arial";
+                canvasCtx.font = font;
+                const text = `${klass} ${score.toFixed(2)}`;
+                const textWidth = canvasCtx.measureText(text).width;
+                canvasCtx.fillRect(x, y, textWidth + 8, 24);
+                canvasCtx.fillStyle = "#000000";
+                canvasCtx.fillText(text, x + 4, y + 18);
+                
+                if (currentDetections[klass]) {
+                    currentDetections[klass]++;
+                } else {
+                    currentDetections[klass] = 1;
+                }
+            }
+            
+            for(const key in currentDetections) {
+                if(detectedObjects[key]){
+                    detectedObjects[key]++;
+                } else {
+                    detectedObjects[key] = 1;
+                }
+            }
+
+            requestAnimationFrame(detectFrame);
         }
-    }
+        
+        function updateWordCloud() {
+            const list = Object.entries(detectedObjects).map(([text, count]) => {
+                const weight = Math.log2(count + 1) * 8;
+                return [text, weight];
+            });
 
-    main();
-</script>
+            if (list.length > 0) {
+                WordCloud(wordcloudCanvas, { 
+                    list: list,
+                    backgroundColor: '#ffffff',
+                    color: 'random-dark',
+                    weightFactor: 2.5
+                });
+            }
+            detectedObjects = {}; 
+        }
+        
+        async function main() {
+            try {
+                await setupWebcam();
+                console.log("Webcam setup complete.");
+
+                console.log("Loading COCO-SSD model...");
+                loaderElement.innerText = "公式モデルを読み込んでいます...";
+                
+                model = await cocoSsd.load(); 
+                
+                console.log("Model loaded.");
+                loaderElement.style.display = 'none';
+
+                detectFrame();
+                setInterval(updateWordCloud, 3000);
+            } catch (e) {
+                console.error(e);
+                loaderElement.innerText = "エラーが発生しました。コンソールを確認してください。";
+            }
+        }
+        main();
+    </script>
 </body>
 </html>
