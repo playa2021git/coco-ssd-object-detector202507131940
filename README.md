@@ -1,9 +1,9 @@
 # Real-Time Object Detection Web App
 
-A simple, browser-based, real-time object detection application featuring a live webcam feed and a dynamic word cloud display.
+A browser-based, real-time object detection application featuring a live webcam feed, bounding-box overlays, detection controls, live metrics, and a dynamic word cloud display.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status](https://img.shields.io/badge/status-complete-brightgreen)](https://github.com/playa2021git/yolo-object-detector2025)
+[![Status](https://img.shields.io/badge/status-active-brightgreen)](https://github.com/playa2021git/yolo-object-detector2025)
 
 ---
 
@@ -15,45 +15,48 @@ A simple, browser-based, real-time object detection application featuring a live
 
 This project is a user-friendly, real-time object detection application that runs entirely in your web browser. It was developed with a special audience in mind: **technology teachers and students in Japanese junior high schools**.
 
-The goal was to create a simple yet powerful tool that demystifies Artificial Intelligence. By using jejich own webcam, students can see firsthand how an AI model identifies objects in the real world, making abstract concepts tangible and exciting.
+The goal is to make object detection easy to demonstrate in class. Students can use a webcam to see how an AI model identifies objects in the real world, while also changing practical settings such as confidence threshold and detection interval.
 
-### Key Features
+## Key Features
 
-*   **Real-Time Detection:** Identifies objects from your webcam feed instantly.
-*   **Zero Installation:** Runs entirely in the browser. No complex setup required.
-*   **Interactive Visualization:** Overlays bounding boxes and labels on the video feed.
-*   **Dynamic Word Cloud:** Visualizes the frequency of detected objects in a fun, intuitive way.
-*   **Privacy First:** All processing happens locally on your computer. Your camera data never leaves your browser.
-*   **Reset Functionality:** A "Reset Cloud" button allows you to clear the memory and start fresh.
+* **Real-Time Detection:** Identifies objects from your webcam feed and overlays bounding boxes and confidence labels.
+* **Performance Controls:** Adjust the confidence threshold, detection interval, and maximum number of detections without editing code.
+* **Camera Selection:** Switch between available cameras after permission is granted.
+* **Live Metrics:** Shows approximate inference FPS, latest detection count, TensorFlow.js backend, and model name.
+* **Dynamic Word Cloud:** Visualizes the frequency of detected objects in a fun, intuitive way.
+* **Pause and Reset:** Pause detection when discussing a frame, and reset the word cloud when starting a new activity.
+* **Privacy First:** All processing happens locally in the browser. Camera data is not uploaded to a server.
+* **Zero Installation for Users:** Works from a static web page over HTTPS or localhost.
 
 ## How It Works (Technology Stack)
 
-This application is built with modern, accessible web technologies:
+This application is built with accessible web technologies:
 
-*   **HTML5, CSS3, and modern JavaScript**
-*   **TensorFlow.js:** The core machine learning library that runs the AI model directly in the browser.
-*   **Google's COCO-SSD Model:** To ensure stability, reliability, and ease of use, this app proudly uses the official COCO-SSD model provided by the TensorFlow.js team. It is pre-trained to recognize 80 common objects.
-*   **wordcloud2.js:** A fantastic JavaScript library for creating the word cloud visualization.
-*   **GitHub Pages:** For hosting the application, making it freely accessible to everyone.
+* **HTML5, CSS3, and modern JavaScript** in a single static page.
+* **TensorFlow.js 4.x** for running machine-learning inference in the browser.
+* **COCO-SSD 2.2.3** using the lightweight MobileNet V2 base model, pre-trained to recognize 80 common object classes.
+* **wordcloud2.js** for the word cloud visualization.
+* **GitHub Pages** or any static web host for deployment.
+
+## Running Locally
+
+Because browsers restrict webcam access, open the app from `localhost` or an HTTPS origin.
+
+```bash
+python3 -m http.server 8000
+```
+
+Then open <http://localhost:8000/> in a modern browser and allow camera access.
 
 ## A Note for Educators (先生方へ)
 
-This tool was specifically created for you.
+This tool is intended for use in technology classes (`技術科`). It can help spark discussions such as:
 
-Please feel free to use, modify, and share this application in your technology classes (`技術科`). It's a great way to demonstrate fundamental AI concepts like object detection, confidence scores, and even model limitations in a hands-on, interactive way. You can spark discussions about:
-
-*   How does an AI "see" the world?
-*   Why does it sometimes misidentify objects?
-*   What kind of data was used to train this AI?
-*   What are the ethical implications of this technology?
-
-## The Development Story
-
-The journey of creating this app is a story of modern, AI-assisted development.
-
-As a developer who is still learning, I built this entire application with the significant help of a large language model, **Google's AI Studio (powered by Gemini)**. Through a process of conversation, debugging, and iterative improvement, we were able to bring this complex idea to life.
-
-This project stands as a testament to the power of these new tools. It shows that with curiosity and the right AI partner, even those new to programming can build meaningful and functional applications.
+* How does an AI “see” the world?
+* Why does it sometimes misidentify objects?
+* How does changing the confidence threshold affect results?
+* Why does a faster detection interval use more computer resources?
+* What are the privacy and ethics considerations for camera-based AI?
 
 ## License
 
