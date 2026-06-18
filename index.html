@@ -3,248 +3,659 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>リアルタイム物体検出アプリ (完成版)</title>
-    
-    <!-- CSSをHTMLに埋め込み -->
+    <title>リアルタイム物体検出アプリ</title>
     <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #0f172a;
+            --panel: rgba(15, 23, 42, 0.82);
+            --panel-strong: rgba(15, 23, 42, 0.95);
+            --text: #e5e7eb;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-2: #22c55e;
+            --danger: #f97316;
+            --border: rgba(148, 163, 184, 0.28);
+            --shadow: 0 24px 80px rgba(2, 6, 23, 0.42);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: sans-serif;
             margin: 0;
-            background-color: #f0f0f0;
-            color: #333;
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.22), transparent 32rem),
+                linear-gradient(135deg, #020617 0%, #111827 58%, #1e293b 100%);
+            color: var(--text);
         }
-        .container {
-            display: flex;
-            flex-wrap: wrap;
-            width: 100%;
-            height: 100vh;
-            box-sizing: border-box;
+
+        button, input, select {
+            font: inherit;
         }
-        h1 {
-            color: #333;
-            text-align: center;
-            width: 100%;
+
+        button {
+            border: 0;
+            border-radius: 999px;
+            padding: 0.75rem 1.15rem;
+            background: linear-gradient(135deg, var(--accent), #818cf8);
+            color: #020617;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
         }
-        /* ★★★ ここが修正点！ ★★★ */
-        .video-container {
-            flex: 2; /* 画面の2/3の幅を確保 */
-            padding: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
+
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            filter: brightness(1.08);
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+
+        .app-shell {
+            width: min(1440px, 100%);
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 20px;
             align-items: center;
-            justify-content: center;
-            position: relative;
+            margin-bottom: 24px;
         }
-        .wordcloud-container {
-            flex: 1; /* 画面の1/3の幅を確保 */
-            min-width: 300px; /* 小さくなりすぎないように */
-            padding: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            position: relative;
+
+        .hero h1 {
+            margin: 0 0 8px;
+            font-size: clamp(1.8rem, 3vw, 3rem);
+            letter-spacing: -0.04em;
         }
+
+        .hero p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        .status-card {
+            min-width: 260px;
+            padding: 18px;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            background: var(--panel);
+            box-shadow: var(--shadow);
+        }
+
+        .status-label {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+
+        #statusText {
+            font-weight: 700;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(320px, 2fr) minmax(300px, 0.95fr);
+            gap: 24px;
+            align-items: stretch;
+        }
+
+        .panel {
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            background: var(--panel);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .video-panel {
+            padding: 18px;
+        }
+
         .video-wrapper {
             position: relative;
-            width: 95%; /* 横幅いっぱいに広げる */
-            max-width: 960px; /* 大きくなりすぎないように制限 */
-            border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 22px;
+            background: #020617;
         }
+
         #webcam, #canvas {
             position: absolute;
-            top: 0;
-            left: 0;
+            inset: 0;
             width: 100%;
             height: 100%;
         }
+
         #webcam {
-            position: relative;
-            display: block;
+            object-fit: cover;
+            transform: scaleX(-1);
         }
+
         #canvas {
-            z-index: 10;
+            z-index: 2;
         }
+
+        .video-placeholder {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            z-index: 3;
+            padding: 24px;
+            text-align: center;
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(30, 41, 59, 0.86));
+        }
+
+        .video-placeholder.is-hidden {
+            display: none;
+        }
+
+        .video-placeholder strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 1.2rem;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .control {
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: rgba(2, 6, 23, 0.38);
+        }
+
+        .control label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .control output {
+            margin-left: 6px;
+            color: var(--accent);
+        }
+
+        .control input, .control select {
+            width: 100%;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .metric {
+            padding: 14px;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.72);
+        }
+
+        .metric span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+
+        .metric strong {
+            display: block;
+            margin-top: 4px;
+            font-size: 1.3rem;
+        }
+
+        .side-panel {
+            display: grid;
+            grid-template-rows: auto minmax(260px, 1fr) auto;
+        }
+
+        .side-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .side-header h2 {
+            margin: 0 0 6px;
+        }
+
+        .side-header p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
         #wordcloud-wrapper {
-            width: 90%;
-            height: 80%;
-            background-color: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            min-height: 320px;
+            margin: 18px;
+            border-radius: 22px;
+            background: #ffffff;
+            overflow: hidden;
         }
+
         #wordcloud {
             width: 100% !important;
             height: 100% !important;
         }
-        .loader {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 1.2em;
-            color: #555;
+
+        .detections {
+            padding: 0 20px 20px;
         }
 
-        /* レスポンシブ対応 */
-        @media (max-width: 768px) {
-            .container {
-                flex-direction: column;
-                height: auto;
+        .detections h3 {
+            margin: 0 0 10px;
+            font-size: 1rem;
+        }
+
+        #detectionList {
+            display: grid;
+            gap: 8px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        #detectionList li {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(2, 6, 23, 0.36);
+        }
+
+        .empty-list {
+            color: var(--muted);
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .secondary {
+            background: rgba(148, 163, 184, 0.16);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .danger {
+            background: linear-gradient(135deg, var(--danger), #facc15);
+        }
+
+        @media (max-width: 1000px) {
+            .hero, .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .controls, .metrics {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .app-shell {
+                padding: 14px;
+            }
+
+            .controls, .metrics {
+                grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="video-container">
-            <h1>Webcam Feed</h1>
-            <div class="video-wrapper">
-                <video id="webcam" autoplay playsinline muted></video>
-                <canvas id="canvas"></canvas>
+    <main class="app-shell">
+        <header class="hero">
+            <div>
+                <h1>リアルタイム物体検出アプリ</h1>
+                <p>COCO-SSD と TensorFlow.js をブラウザ上で実行します。検出間隔・信頼度・最大検出数を調整でき、カメラ映像は端末外へ送信されません。</p>
             </div>
-             <div id="loader" class="loader">モデルを読み込んでいます...</div>
-        </div>
-        <div class="wordcloud-container">
-            <h1>Detected Objects</h1>
-            <button onclick="resetWordCloud()">Reset Cloud</button>
-            <div id="wordcloud-wrapper">
-                <canvas id="wordcloud"></canvas>
+            <div class="status-card" aria-live="polite">
+                <span class="status-label">現在の状態</span>
+                <span id="statusText">初期化中...</span>
             </div>
-        </div>
-    </div>
+        </header>
 
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+        <section class="layout" aria-label="物体検出アプリ本体">
+            <div class="panel video-panel">
+                <div class="video-wrapper">
+                    <video id="webcam" autoplay playsinline muted></video>
+                    <canvas id="canvas"></canvas>
+                    <div id="placeholder" class="video-placeholder">
+                        <div>
+                            <strong>準備中です</strong>
+                            <span>モデルとカメラを読み込んでいます。</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls" aria-label="検出設定">
+                    <div class="control">
+                        <label for="cameraSelect">カメラ</label>
+                        <select id="cameraSelect" disabled>
+                            <option>読み込み中...</option>
+                        </select>
+                    </div>
+                    <div class="control">
+                        <label for="scoreThreshold">信頼度 <output id="scoreOutput">0.55</output></label>
+                        <input id="scoreThreshold" type="range" min="0.2" max="0.9" value="0.55" step="0.05">
+                    </div>
+                    <div class="control">
+                        <label for="detectInterval">検出間隔 <output id="intervalOutput">160ms</output></label>
+                        <input id="detectInterval" type="range" min="80" max="600" value="160" step="20">
+                    </div>
+                    <div class="control">
+                        <label for="maxDetections">最大検出数</label>
+                        <select id="maxDetections">
+                            <option value="5">5</option>
+                            <option value="10" selected>10</option>
+                            <option value="20">20</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="metrics" aria-label="検出メトリクス">
+                    <div class="metric"><span>推論速度</span><strong id="fpsMetric">-- fps</strong></div>
+                    <div class="metric"><span>最新検出数</span><strong id="countMetric">0</strong></div>
+                    <div class="metric"><span>バックエンド</span><strong id="backendMetric">--</strong></div>
+                    <div class="metric"><span>モデル</span><strong>COCO-SSD</strong></div>
+                </div>
+            </div>
+
+            <aside class="panel side-panel">
+                <div class="side-header">
+                    <h2>検出された物体</h2>
+                    <p>直近の検出結果と、一定時間ごとに集計されるワードクラウドを表示します。</p>
+                </div>
+                <div id="wordcloud-wrapper">
+                    <canvas id="wordcloud"></canvas>
+                </div>
+                <div class="detections">
+                    <h3>現在フレーム</h3>
+                    <ul id="detectionList"><li class="empty-list">まだ検出されていません。</li></ul>
+                </div>
+                <div class="actions">
+                    <button id="pauseButton" class="secondary" type="button" disabled>一時停止</button>
+                    <button id="resetButton" class="danger" type="button">クラウドをリセット</button>
+                </div>
+            </aside>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.js"></script>
 
     <script>
         const webcamElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('canvas');
         const wordcloudCanvas = document.getElementById('wordcloud');
-        const loaderElement = document.getElementById('loader');
+        const placeholderElement = document.getElementById('placeholder');
+        const statusText = document.getElementById('statusText');
+        const scoreThresholdInput = document.getElementById('scoreThreshold');
+        const scoreOutput = document.getElementById('scoreOutput');
+        const detectIntervalInput = document.getElementById('detectInterval');
+        const intervalOutput = document.getElementById('intervalOutput');
+        const maxDetectionsSelect = document.getElementById('maxDetections');
+        const cameraSelect = document.getElementById('cameraSelect');
+        const fpsMetric = document.getElementById('fpsMetric');
+        const countMetric = document.getElementById('countMetric');
+        const backendMetric = document.getElementById('backendMetric');
+        const detectionList = document.getElementById('detectionList');
+        const pauseButton = document.getElementById('pauseButton');
+        const resetButton = document.getElementById('resetButton');
         const canvasCtx = canvasElement.getContext('2d');
 
         let model;
-        let detectedObjects = {};
+        let stream;
+        let isPaused = false;
+        let detectedObjects = new Map();
+        let lastDetectionTime = 0;
+        let animationFrameId;
+
+        const colors = ['#38bdf8', '#22c55e', '#f97316', '#e879f9', '#facc15'];
+
+        function setStatus(message) {
+            statusText.textContent = message;
+        }
+
+        function syncControlLabels() {
+            scoreOutput.value = Number(scoreThresholdInput.value).toFixed(2);
+            intervalOutput.value = `${detectIntervalInput.value}ms`;
+        }
 
         function resetWordCloud() {
-            detectedObjects = {};
+            detectedObjects = new Map();
             const context = wordcloudCanvas.getContext('2d');
-            if (context) {
-                context.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
+            context.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
+        }
+
+        function stopCurrentStream() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
             }
-            console.log("Word cloud has been reset.");
         }
-        
-        async function setupWebcam() {
-            return new Promise((resolve, reject) => {
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-                        .then(stream => {
-                            webcamElement.srcObject = stream;
-                            webcamElement.addEventListener('loadeddata', resolve, false);
-                        })
-                        .catch(error => {
-                            console.error("Webcam access error:", error);
-                            loaderElement.innerText = "ウェブカメラにアクセスできません。";
-                            reject();
-                        });
-                } else {
-                    loaderElement.innerText = "お使いのブラウザはウェブカメラに対応していません。";
-                    reject();
-                }
+
+        async function setupTensorFlow() {
+            setStatus('TensorFlow.js を最適化中...');
+            await tf.ready();
+            if (tf.getBackend() !== 'webgl') {
+                await tf.setBackend('webgl');
+                await tf.ready();
+            }
+            backendMetric.textContent = tf.getBackend();
+        }
+
+        async function populateCameras() {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoInputs = devices.filter(device => device.kind === 'videoinput');
+            cameraSelect.innerHTML = '';
+
+            videoInputs.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `カメラ ${index + 1}`;
+                cameraSelect.appendChild(option);
             });
+
+            cameraSelect.disabled = videoInputs.length <= 1;
         }
 
-        async function detectFrame() {
-            if (!model) return;
+        async function setupWebcam(deviceId) {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('このブラウザはウェブカメラに対応していません。');
+            }
 
-            const predictions = await model.detect(webcamElement);
+            stopCurrentStream();
+            setStatus('カメラを起動中...');
+            const constraints = {
+                audio: false,
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    facingMode: deviceId ? undefined : 'user',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
 
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            webcamElement.srcObject = stream;
+            await new Promise(resolve => {
+                webcamElement.onloadedmetadata = () => {
+                    webcamElement.play();
+                    resolve();
+                };
+            });
+            await populateCameras();
+        }
+
+        function drawPredictions(predictions) {
             canvasElement.width = webcamElement.videoWidth;
             canvasElement.height = webcamElement.videoHeight;
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            
-            const currentDetections = {};
-            
-            for (let i = 0; i < predictions.length; i++) {
-                const prediction = predictions[i];
-                const [x, y, width, height] = prediction.bbox;
-                const klass = prediction.class;
-                const score = prediction.score;
+            canvasCtx.save();
+            canvasCtx.translate(canvasElement.width, 0);
+            canvasCtx.scale(-1, 1);
 
-                canvasCtx.strokeStyle = "#00FF00";
+            predictions.forEach((prediction, index) => {
+                const [x, y, width, height] = prediction.bbox;
+                const color = colors[index % colors.length];
+                const text = `${prediction.class} ${(prediction.score * 100).toFixed(0)}%`;
+
+                canvasCtx.strokeStyle = color;
                 canvasCtx.lineWidth = 4;
                 canvasCtx.strokeRect(x, y, width, height);
 
-                canvasCtx.fillStyle = "#00FF00";
-                const font = "20px Arial";
-                canvasCtx.font = font;
-                const text = `${klass} ${score.toFixed(2)}`;
+                canvasCtx.font = 'bold 18px system-ui, sans-serif';
                 const textWidth = canvasCtx.measureText(text).width;
-                canvasCtx.fillRect(x, y, textWidth + 8, 24);
-                canvasCtx.fillStyle = "#000000";
-                canvasCtx.fillText(text, x + 4, y + 18);
-                
-                if (currentDetections[klass]) {
-                    currentDetections[klass]++;
-                } else {
-                    currentDetections[klass] = 1;
-                }
-            }
-            
-            for(const key in currentDetections) {
-                if(detectedObjects[key]){
-                    detectedObjects[key]++;
-                } else {
-                    detectedObjects[key] = 1;
-                }
-            }
-
-            requestAnimationFrame(detectFrame);
-        }
-        
-        function updateWordCloud() {
-            const list = Object.entries(detectedObjects).map(([text, count]) => {
-                const weight = Math.log2(count + 1) * 8;
-                return [text, weight];
+                canvasCtx.fillStyle = color;
+                canvasCtx.fillRect(x, Math.max(0, y - 30), textWidth + 14, 28);
+                canvasCtx.fillStyle = '#020617';
+                canvasCtx.fillText(text, x + 7, Math.max(18, y - 10));
             });
 
-            if (list.length > 0) {
-                WordCloud(wordcloudCanvas, { 
-                    list: list,
-                    backgroundColor: '#ffffff',
-                    color: 'random-dark',
-                    weightFactor: 2.5
-                });
-            }
-            detectedObjects = {}; 
+            canvasCtx.restore();
         }
-        
+
+        function updateDetectionList(predictions) {
+            detectionList.innerHTML = '';
+            if (predictions.length === 0) {
+                const emptyItem = document.createElement('li');
+                emptyItem.className = 'empty-list';
+                emptyItem.textContent = '条件を満たす物体はありません。';
+                detectionList.appendChild(emptyItem);
+                return;
+            }
+
+            predictions.forEach(prediction => {
+                const item = document.createElement('li');
+                const label = document.createElement('span');
+                const confidence = document.createElement('strong');
+                label.textContent = prediction.class;
+                confidence.textContent = `${(prediction.score * 100).toFixed(1)}%`;
+                item.append(label, confidence);
+                detectionList.appendChild(item);
+            });
+        }
+
+        function rememberDetections(predictions) {
+            predictions.forEach(({ class: objectName }) => {
+                detectedObjects.set(objectName, (detectedObjects.get(objectName) || 0) + 1);
+            });
+        }
+
+        async function detectLoop(timestamp = performance.now()) {
+            if (!model || isPaused) {
+                animationFrameId = requestAnimationFrame(detectLoop);
+                return;
+            }
+
+            const interval = Number(detectIntervalInput.value);
+            if (timestamp - lastDetectionTime >= interval) {
+                const startedAt = performance.now();
+                const predictions = await model.detect(
+                    webcamElement,
+                    Number(maxDetectionsSelect.value),
+                    Number(scoreThresholdInput.value)
+                );
+                const elapsed = performance.now() - startedAt;
+
+                drawPredictions(predictions);
+                updateDetectionList(predictions);
+                rememberDetections(predictions);
+                countMetric.textContent = predictions.length.toString();
+                fpsMetric.textContent = `${Math.max(1, Math.round(1000 / Math.max(elapsed, interval)))} fps`;
+                lastDetectionTime = timestamp;
+            }
+
+            animationFrameId = requestAnimationFrame(detectLoop);
+        }
+
+        function updateWordCloud() {
+            if (detectedObjects.size === 0) return;
+
+            const list = [...detectedObjects.entries()].map(([text, count]) => [
+                text,
+                Math.max(12, Math.log2(count + 1) * 14)
+            ]);
+
+            WordCloud(wordcloudCanvas, {
+                list,
+                backgroundColor: '#ffffff',
+                color: 'random-dark',
+                gridSize: 10,
+                rotateRatio: 0.18,
+                weightFactor: 1,
+                shrinkToFit: true
+            });
+        }
+
+        async function changeCamera() {
+            cancelAnimationFrame(animationFrameId);
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            await setupWebcam(cameraSelect.value);
+            lastDetectionTime = 0;
+            animationFrameId = requestAnimationFrame(detectLoop);
+        }
+
         async function main() {
             try {
+                syncControlLabels();
+                await setupTensorFlow();
                 await setupWebcam();
-                console.log("Webcam setup complete.");
-
-                console.log("Loading COCO-SSD model...");
-                loaderElement.innerText = "公式モデルを読み込んでいます...";
-                
-                model = await cocoSsd.load(); 
-                
-                console.log("Model loaded.");
-                loaderElement.style.display = 'none';
-
-                detectFrame();
-                setInterval(updateWordCloud, 3000);
-            } catch (e) {
-                console.error(e);
-                loaderElement.innerText = "エラーが発生しました。コンソールを確認してください。";
+                setStatus('COCO-SSD モデルを読み込み中...');
+                model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+                placeholderElement.classList.add('is-hidden');
+                pauseButton.disabled = false;
+                setStatus('検出中');
+                animationFrameId = requestAnimationFrame(detectLoop);
+                setInterval(updateWordCloud, 2500);
+            } catch (error) {
+                console.error(error);
+                setStatus(error.message || 'エラーが発生しました。');
+                placeholderElement.querySelector('strong').textContent = '起動できませんでした';
+                placeholderElement.querySelector('span').textContent = 'HTTPS / localhost で開き、カメラ権限を確認してください。';
             }
         }
+
+        scoreThresholdInput.addEventListener('input', syncControlLabels);
+        detectIntervalInput.addEventListener('input', syncControlLabels);
+        resetButton.addEventListener('click', resetWordCloud);
+        cameraSelect.addEventListener('change', changeCamera);
+        pauseButton.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseButton.textContent = isPaused ? '再開' : '一時停止';
+            setStatus(isPaused ? '一時停止中' : '検出中');
+            if (isPaused) {
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            }
+        });
+
+        window.addEventListener('beforeunload', stopCurrentStream);
         main();
     </script>
 </body>
